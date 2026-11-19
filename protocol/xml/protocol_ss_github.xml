@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metalib version="1.0" desc="github相关服务的RPC协议定义">
+    <header name="protocol_ss_github" desc="github相关服务的RPC协议定义">
+
+        <macro name="SS_CMD_GET_GITHUB_PR_INFO" value="100" type="int" desc="获取github的PR信息"/>
+        <struct name="GithubPRInfo" desc="GitHub Pull Request 事件数据（对应 pull_request webhook）" serialize="true">
+            <entry name="Action" type="string" desc="事件类型: opened/closed/reopened/synchronize/edited/labeled/unlabeled"/>
+            <entry name="Number" type="int" desc="PR 编号"/>
+            <entry name="Title" type="string" desc="PR 标题"/>
+            <entry name="Body" type="string" desc="PR 描述/正文"/>
+            <entry name="State" type="string" desc="状态: open/closed"/>
+            <entry name="Author" type="string" desc="作者 GitHub 用户名"/>
+            <entry name="HeadBranch" type="string" desc="源分支"/>
+            <entry name="BaseBranch" type="string" desc="目标分支"/>
+            <entry name="HeadSha" type="string" desc="最新 commit SHA"/>
+            <entry name="Merged" type="bool" desc="是否已合并"/>
+            <entry name="ChangedFiles" type="int" desc="变更文件数"/>
+            <entry name="Additions" type="int" desc="新增行数"/>
+            <entry name="Deletions" type="int" desc="删除行数"/>
+
+            <!-- 时间（ISO8601 字符串，如 2026-06-26T10:30:00Z） -->
+            <entry name="CreatedAt" type="string" desc="创建时间"/>
+            <entry name="ClosedAt" type="string" desc="关闭时间"/>
+            <entry name="MergedAt" type="string" desc="合并时间"/>
+            <entry name="RepoOwner" type="string" desc="仓库所有者"/>
+            <entry name="RepoName" type="string" desc="仓库名称"/>
+        </struct>
+
+        <macro name="SS_CMD_GET_GITHUB_PR_REVIEW_INFO" value="101" type="int" desc="获取github的PR审查信息"/>
+        <struct name="GithubPRReviewInfo" desc="GitHub PR Review 事件数据（对应 pull_request_review webhook）" serialize="true">
+            <entry name="Action" type="string" desc="事件类型: submitted/edited/dismissed"/>
+            <entry name="PRNumber" type="int" desc="PR 编号"/>
+            <entry name="Reviewer" type="string" desc="审查者 GitHub 用户名"/>
+            <entry name="State" type="string" desc="审查结果: approved/changes_requested/commented/dismissed"/>
+            <entry name="SubmittedAt" type="string" desc="审查提交时间 (ISO8601)"/>
+            <entry name="RepoOwner" type="string" desc="仓库所有者"/>
+            <entry name="RepoName" type="string" desc="仓库名称"/>
+        </struct>
+
+        <macrogroup name="GithubError" desc="GitHub RPC 错误码定义">
+            <macro name="GITHUB_REPO_NOT_FOUND" value="1" desc="GitHub RPC 错误码: 仓库未找到"/>
+            <macro name="GITHUB_PR_NOT_FOUND" value="2" desc="GitHub RPC 错误码: PR 未找到"/>
+            <macro name="GITHUB_DB_CONNECTION_FAILED" value="3" desc="GitHub RPC 错误码: 数据库连接失败"/>
+            <macro name="GITHUB_DB_OPERATION_FAILED" value="4" desc="GitHub RPC 错误码: 数据库操作失败"/>
+            <macro name="GITHUB_UNKNOWN_ERROR" value="5" desc="GitHub RPC 错误码: 未知错误"/>
+        </macrogroup>
+
+    </header>
+</metalib>
