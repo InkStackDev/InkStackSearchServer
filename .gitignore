@@ -36,6 +36,7 @@ resources
 orm
 tools
 *.dat
+/indices
 *.sql*
 dbproxy/data
 *upload*

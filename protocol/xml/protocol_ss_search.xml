@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metalib version="1.0" desc="搜索服务RPC协议定义">
+    <header name="protocol_ss_search" desc="搜索服务RPC协议定义">
+
+        <macro name="SS_SEARCH_INDEX_VERSION" value="3" type="int" desc="搜索索引文件格式版本"/>
+
+        <macro name="SS_CMD_SEARCH_ARTICLES" value="200" type="int" desc="搜索文章"/>
+        <macro name="SS_CMD_SEARCH_UPSERT_DOC" value="201" type="int" desc="新增或更新搜索文档"/>
+        <macro name="SS_CMD_SEARCH_REMOVE_ARTICLE" value="202" type="int" desc="从搜索索引移除文章"/>
+        <macro name="SS_CMD_SEARCH_REBUILD_BEGIN" value="203" type="int" desc="开始全量重建"/>
+        <macro name="SS_CMD_SEARCH_REBUILD_DOCS" value="204" type="int" desc="推送全量重建文档"/>
+        <macro name="SS_CMD_SEARCH_REBUILD_COMMIT" value="205" type="int" desc="提交全量重建"/>
+        <macro name="SS_CMD_SEARCH_GET_STATS" value="206" type="int" desc="获取搜索服务状态"/>
+
+        <struct name="SearchQuery" desc="搜索查询条件" serialize="true">
+            <entry name="Keyword" type="string" desc="关键词"/>
+            <entry name="CategoryIds" type="biguint" array="true" desc="分类ID列表"/>
+            <entry name="LabelIds" type="biguint" array="true" desc="标签ID列表"/>
+            <entry name="State" type="int" desc="文章状态，0表示不过滤"/>
+            <entry name="Channel" type="bigint" desc="频道ID，0表示不过滤"/>
+            <entry name="UserId" type="bigint" desc="作者ID，0表示不过滤"/>
+            <entry name="YearMonth" type="string" desc="年月，例如 2026年11月"/>
+            <entry name="Page" type="int" desc="页码，从1开始"/>
+            <entry name="PageSize" type="int" desc="每页数量"/>
+        </struct>
+
+        <struct name="SearchDoc" desc="搜索文档" serialize="true">
+            <entry name="ArticleId" type="biguint" desc="文章ID"/>
+            <entry name="UserId" type="bigint" desc="作者ID"/>
+            <entry name="State" type="int" desc="文章状态"/>
+            <entry name="Channel" type="bigint" desc="频道ID"/>
+            <entry name="PublishTime" type="bigint" desc="发布时间"/>
+            <entry name="Weight" type="bigint" desc="权重"/>
+            <entry name="SearchUpdateTime" type="bigint" desc="搜索文档更新时间（毫秒）"/>
+            <entry name="Title" type="string" desc="文章标题"/>
+            <entry name="Content" type="string" desc="文章内容"/>
+            <entry name="CategoryIds" type="biguint" array="true" desc="分类ID列表"/>
+            <entry name="LabelIds" type="biguint" array="true" desc="标签ID列表"/>
+        </struct>
+
+        <struct name="SearchResult" desc="搜索结果" serialize="true">
+            <entry name="Code" type="int" desc="错误码，0表示成功"/>
+            <entry name="Total" type="int" desc="命中总数"/>
+            <entry name="Ids" type="biguint" array="true" desc="当前页文章ID列表"/>
+        </struct>
+
+        <struct name="SearchStats" desc="搜索服务状态" serialize="true">
+            <entry name="Code" type="int" desc="错误码，0表示成功"/>
+            <entry name="Ready" type="bool" desc="索引是否就绪"/>
+            <entry name="Rebuilding" type="bool" desc="是否正在全量重建"/>
+            <entry name="DocCount" type="biguint" desc="文档数量"/>
+            <entry name="LastSyncTime" type="bigint" desc="最后同步时间（毫秒）"/>
+            <entry name="IndexVersion" type="int" desc="索引版本"/>
+        </struct>
+
+        <macrogroup name="SearchError" desc="搜索服务错误码">
+            <macro name="SEARCH_OK" value="0" desc="成功"/>
+            <macro name="SEARCH_NOT_READY" value="1" desc="索引未就绪"/>
+            <macro name="SEARCH_INVALID_QUERY" value="2" desc="查询参数无效"/>
+            <macro name="SEARCH_BUSY" value="3" desc="服务忙，请稍后重试"/>
+            <macro name="SEARCH_BAD_SNAPSHOT" value="4" desc="快照ID无效或已过期"/>
+            <macro name="SEARCH_INTERNAL" value="5" desc="内部错误"/>
+        </macrogroup>
+
+    </header>
+</metalib>
