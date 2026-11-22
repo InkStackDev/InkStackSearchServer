@@ -1,0 +1,191 @@
+name: Build & Package
+
+# 触发：
+#   - 手动 workflow_dispatch（可选 dev/prod、部署路径、端口，出 Actions artifact）
+#   - 打 tag v* → 额外发布到 GitHub Release
+#
+# 产物：inkstack-search-<tag>-<arch>.tar.gz + .sha256
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 打包环境
+        type: choice
+        default: prod
+        options: [prod, dev]
+      deploy_path:
+        description: 目标部署目录（写入配置）
+        type: string
+        default: /opt/inkstack-search
+      log_root:
+        description: 日志目录
+        type: string
+        default: /data/apps/inkstack-search/logs
+      rpc_port:
+        description: RPC Hub 监听端口
+        type: string
+        default: "9010"
+  push:
+    branches:
+      - master
+      - feature/*
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  PKG_ENV: ${{ github.event.inputs.env || 'prod' }}
+  PKG_DEPLOY_PATH: ${{ github.event.inputs.deploy_path || vars.DEPLOY_PATH || '/opt/inkstack-search' }}
+  PKG_LOG_DIR: ${{ github.event.inputs.log_root || vars.LOG_DIR || '/data/apps/inkstack-search/logs' }}
+  PKG_RPC_PORT: ${{ github.event.inputs.rpc_port || vars.RPC_PORT || '9010' }}
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04,     arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Switch apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get update
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            rsync \
+            python3 \
+            gettext \
+            libboost-context-dev \
+            libtool \
+            gcc \
+            g++ \
+            autoconf \
+            automake \
+            cmake \
+            libboost-all-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            libevent-dev \
+            libmysqlclient-dev \
+            ccache \
+            libnghttp2-dev \
+            git \
+            wget \
+            unzip \
+            zip
+
+      - name: Fetch chen-sdk + thirdparty deps
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 deps.py sync
+
+      - name: Apply SDK (bin / tools / protocol / resources)
+        run: make apply
+
+      - name: Generate protocol headers
+        run: make proto
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-search-${{ matrix.arch }}-${{ hashFiles('src/**') }}
+          restore-keys: ccache-search-${{ matrix.arch }}-
+
+      - name: Configure (Release, Ninja)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Prepare prod.env
+        if: env.PKG_ENV == 'prod'
+        run: |
+          {
+            echo "WORK_PATH=${PKG_DEPLOY_PATH}"
+            echo "LOG_DIR=${PKG_LOG_DIR}"
+            echo "INDEX_PATH=${PKG_DEPLOY_PATH}/indices/search.index"
+            echo "DICT_PATH=${PKG_DEPLOY_PATH}/dict"
+            echo "DATA_PATH="
+            echo "PID_FILE=search.pid"
+            echo "INSTANCE_ID=1"
+            echo "LOG_LEVEL=info"
+            echo "RPC_PORT=${PKG_RPC_PORT}"
+            echo "RELAY_TIMEOUT_MS=3000"
+            echo "IO_THREADS=1"
+            echo "ACCEPT_THREADS=1"
+            echo "REBUILD_ON_START=true"
+            echo "SAVE_INTERVAL_MS=30000"
+            echo "REBUILD_TIMEOUT_MS=600000"
+            echo "MAX_PAGE_SIZE=100"
+          } > bin/conf/prod.env
+
+      - name: Package
+        run: ./collect.sh "${PKG_ENV}"
+
+      - name: Rename package (tag + arch)
+        run: |
+          tag="${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}"
+          mv inkstack-search-*.tar.gz "inkstack-search-${tag}-${{ matrix.arch }}.tar.gz"
+          sha256sum "inkstack-search-${tag}-${{ matrix.arch }}.tar.gz" \
+            > "inkstack-search-${tag}-${{ matrix.arch }}.tar.gz.sha256"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkstack-search-${{ matrix.arch }}
+          path: |
+            inkstack-search-*.tar.gz
+            inkstack-search-*.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" --draft --title "${GITHUB_REF_NAME}" \
+              --notes "InkStackSearchServer ${GITHUB_REF_NAME}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" artifacts/*.tar.gz artifacts/*.sha256 \
+            --repo "${GITHUB_REPOSITORY}" --clobber

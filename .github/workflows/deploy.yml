@@ -1,0 +1,169 @@
+name: Deploy
+
+# 手动触发：部署 InkStackSearchServer（单实例 RPC Hub + 搜索服务）
+#
+#   cold   : 停止现有进程 → 解压完整包到 DEPLOY_PATH → 启动 → 健康检查
+#   hot    : 替换 module/*.so、conf/、dict/、deploy.env、scripts/ → reload → 健康检查
+#   module : 只替换 module/*.so（旧文件备份为 *.so.prev），不重启；
+#            由用户自行 ./scripts/searchctl.sh reload，适合灰度
+#   stop   : 停止进程
+#
+# 产物来源（amd64）：
+#   - tag  : 该 tag GitHub Release 的 inkstack-search-*amd64*.tar.gz
+#   - 分支 : 该分支最近一次成功的 "Build & Package" artifact inkstack-search-amd64
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 部署模式
+        type: choice
+        required: true
+        default: cold
+        options: [cold, hot, module, stop]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve + download package
+        if: inputs.mode != 'stop'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p pkg
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "==> 产物来源: Release ${GITHUB_REF_NAME}"
+            gh release download "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --pattern 'inkstack-search-*amd64*.tar.gz' --dir pkg --clobber
+          else
+            echo "==> 产物来源: 分支 ${GITHUB_REF_NAME} 最近一次成功的 Build & Package"
+            run_id="$(gh run list --repo "${GITHUB_REPOSITORY}" \
+              --workflow "Build & Package" --branch "${GITHUB_REF_NAME}" \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            if [ -z "${run_id}" ]; then
+              echo "错误: 分支 ${GITHUB_REF_NAME} 没有成功的 Build & Package 运行" >&2
+              exit 1
+            fi
+            gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" \
+              -n inkstack-search-amd64 -D pkg
+          fi
+          ls -l pkg
+          pkg="$(find pkg -name '*amd64*.tar.gz' | head -1)"
+          test -n "${pkg}" || { echo "错误: 未找到部署包" >&2; exit 1; }
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Upload package
+        if: inputs.mode != 'stop'
+        run: |
+          SCP_OPTS=(-P "${SSH_PORT}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new)
+          pkg="$(find pkg -name '*amd64*.tar.gz' | head -1)"
+          scp "${SCP_OPTS[@]}" "${pkg}" "${SSH_USER}@${SSH_HOST}:/tmp/inkstack-search.tar.gz"
+
+      - name: Run deploy on server
+        run: |
+          SSH_OPTS=(-p "${SSH_PORT}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new)
+          MODE='${{ inputs.mode }}'
+          DP='${DEPLOY_PATH}'
+          ssh "${SSH_OPTS[@]}" "${SSH_USER}@${SSH_HOST}" \
+            "MODE='${MODE}' DEPLOY_PATH='${DP}' bash -s" <<'REMOTE'
+            set -euo pipefail
+            : "${DEPLOY_PATH:?DEPLOY_PATH 未配置（vars.DEPLOY_PATH）}"
+
+            stop_service() {
+              if [ -x "$DEPLOY_PATH/scripts/searchctl.sh" ]; then
+                ( cd "$DEPLOY_PATH" && ./scripts/searchctl.sh stop ) || true
+              elif [ -x "$DEPLOY_PATH/server" ]; then
+                ( cd "$DEPLOY_PATH" && LD_LIBRARY_PATH="$DEPLOY_PATH/lib:${LD_LIBRARY_PATH:-}" \
+                    ./server -c "$DEPLOY_PATH/conf" -s stop ) || true
+              fi
+            }
+
+            case "$MODE" in
+              cold)
+                stop_service
+                mkdir -p "$DEPLOY_PATH"
+                tar xzf /tmp/inkstack-search.tar.gz -C "$DEPLOY_PATH"
+                chmod +x "$DEPLOY_PATH/server" "$DEPLOY_PATH"/scripts/*.sh
+                cd "$DEPLOY_PATH"
+                ./scripts/searchctl.sh start
+                ./scripts/searchctl.sh health
+                ;;
+              hot)
+                tmp="$(mktemp -d)"
+                trap 'rm -rf "$tmp"' EXIT
+                tar xzf /tmp/inkstack-search.tar.gz -C "$tmp"
+                mkdir -p "$DEPLOY_PATH/module" "$DEPLOY_PATH/scripts"
+                for so in "$tmp"/module/*.so; do
+                  [ -f "$so" ] || continue
+                  base="$(basename "$so")"
+                  cp -f "$so" "$DEPLOY_PATH/module/$base.new"
+                  mv -f "$DEPLOY_PATH/module/$base.new" "$DEPLOY_PATH/module/$base"
+                done
+                rsync -a --delete "$tmp/conf/" "$DEPLOY_PATH/conf/"
+                if [ -d "$tmp/dict" ]; then
+                  rsync -a --delete "$tmp/dict/" "$DEPLOY_PATH/dict/"
+                fi
+                cp -f "$tmp/deploy.env" "$DEPLOY_PATH/deploy.env"
+                cp -f "$tmp/LICENSE" "$DEPLOY_PATH/LICENSE"
+                cp -f "$tmp"/scripts/*.sh "$DEPLOY_PATH/scripts/"
+                chmod +x "$DEPLOY_PATH/scripts/"*.sh
+                cd "$DEPLOY_PATH"
+                ./scripts/searchctl.sh reload
+                ./scripts/searchctl.sh health
+                ;;
+              module)
+                tmp="$(mktemp -d)"
+                trap 'rm -rf "$tmp"' EXIT
+                tar xzf /tmp/inkstack-search.tar.gz -C "$tmp"
+                mkdir -p "$DEPLOY_PATH/module"
+                for so in "$tmp"/module/*.so; do
+                  [ -f "$so" ] || continue
+                  base="$(basename "$so")"
+                  if [ -f "$DEPLOY_PATH/module/$base" ]; then
+                    cp -f "$DEPLOY_PATH/module/$base" "$DEPLOY_PATH/module/$base.prev"
+                  fi
+                  cp -f "$so" "$DEPLOY_PATH/module/$base.new"
+                  mv -f "$DEPLOY_PATH/module/$base.new" "$DEPLOY_PATH/module/$base"
+                  echo "==> 已替换 module/$base（旧文件备份为 $base.prev）"
+                done
+                echo "==> 模块已替换，未重启进程"
+                echo "    灰度/reload: cd $DEPLOY_PATH && ./scripts/searchctl.sh reload"
+                echo "    健康检查:    cd $DEPLOY_PATH && ./scripts/searchctl.sh health"
+                echo "    回滚:"
+                echo "      cd $DEPLOY_PATH/module"
+                echo '      for f in *.so.prev; do mv "$f" "${f%.prev}"; done'
+                echo "      cd $DEPLOY_PATH && ./scripts/searchctl.sh reload"
+                ;;
+              stop)
+                stop_service
+                echo "==> 已停止"
+                ;;
+              *)
+                echo "未知模式: $MODE" >&2
+                exit 2
+                ;;
+            esac
+            rm -f /tmp/inkstack-search.tar.gz
+          REMOTE

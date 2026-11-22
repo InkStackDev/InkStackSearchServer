@@ -65,6 +65,7 @@ void SearchRpcInit(chen::rpc::RpcServer::ptr server)
     server->registerMethod(SS_CMD_SEARCH_REBUILD_DOCS, HandleRebuildDocs);
     server->registerMethod(SS_CMD_SEARCH_REBUILD_COMMIT, HandleRebuildCommit);
     server->registerMethod(SS_CMD_SEARCH_GET_STATS, HandleGetStats);
+
     INFO(logger) << "search RPC registered";
 }
 
@@ -80,6 +81,7 @@ void SearchRpcUninit(chen::rpc::RpcServer::ptr server)
     server->unregisterMethod(SS_CMD_SEARCH_REBUILD_DOCS);
     server->unregisterMethod(SS_CMD_SEARCH_REBUILD_COMMIT);
     server->unregisterMethod(SS_CMD_SEARCH_GET_STATS);
+
     INFO(logger) << "search RPC unregistered";
 }
 
