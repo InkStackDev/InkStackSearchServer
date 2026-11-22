@@ -106,22 +106,22 @@ jobs:
         if: env.PKG_ENV == 'prod'
         run: |
           {
-            echo "WORK_PATH=${PKG_DEPLOY_PATH}"
-            echo "LOG_DIR=${PKG_LOG_DIR}"
-            echo "INDEX_PATH=${PKG_DEPLOY_PATH}/indices/search.index"
-            echo "DICT_PATH=${PKG_DEPLOY_PATH}/dict"
-            echo "DATA_PATH="
-            echo "PID_FILE=search.pid"
-            echo "INSTANCE_ID=1"
-            echo "LOG_LEVEL=info"
-            echo "RPC_PORT=${PKG_RPC_PORT}"
-            echo "RELAY_TIMEOUT_MS=3000"
-            echo "IO_THREADS=1"
-            echo "ACCEPT_THREADS=1"
-            echo "REBUILD_ON_START=true"
-            echo "SAVE_INTERVAL_MS=30000"
-            echo "REBUILD_TIMEOUT_MS=600000"
-            echo "MAX_PAGE_SIZE=100"
+            printf 'WORK_PATH=%q\n' "${PKG_DEPLOY_PATH}"
+            printf 'LOG_DIR=%q\n' "${PKG_LOG_DIR}"
+            printf 'INDEX_PATH=%q\n' "${PKG_DEPLOY_PATH}/indices/search.index"
+            printf 'DICT_PATH=%q\n' "${PKG_DEPLOY_PATH}/dict"
+            printf 'DATA_PATH=%q\n' ""
+            printf 'PID_FILE=%q\n' "search.pid"
+            printf 'INSTANCE_ID=%q\n' "1"
+            printf 'LOG_LEVEL=%q\n' "info"
+            printf 'RPC_PORT=%q\n' "${PKG_RPC_PORT}"
+            printf 'RELAY_TIMEOUT_MS=%q\n' "3000"
+            printf 'IO_THREADS=%q\n' "1"
+            printf 'ACCEPT_THREADS=%q\n' "1"
+            printf 'REBUILD_ON_START=%q\n' "true"
+            printf 'SAVE_INTERVAL_MS=%q\n' "30000"
+            printf 'REBUILD_TIMEOUT_MS=%q\n' "600000"
+            printf 'MAX_PAGE_SIZE=%q\n' "100"
           } > bin/conf/prod.env
 
       - name: Package
