@@ -38,6 +38,12 @@ logs:
       - type: FileLogAppender
         file: ${LOG_DIR}/search.log
       - type: StdoutLogAppender
+  - name: system
+    level: ${LOG_LEVEL}
+    appenders:
+      - type: FileLogAppender
+        file: ${LOG_DIR}/system.log
+      - type: StdoutLogAppender
 
 search:
   # 索引文件落盘路径（父目录需可写）
