@@ -1,30 +1,15 @@
 name: Build & Package
 
 # 触发：
-#   - 手动 workflow_dispatch（可选 dev/prod、部署路径、端口，出 Actions artifact）
+#   - 手动 workflow_dispatch（直接出 Actions artifact）
 #   - 打 tag v* → 额外发布到 GitHub Release
+#
+# 打包参数全部取自仓库 Variables，无需在触发时填写：
+#   PKG_ENV（默认 prod）/ DEPLOY_PATH / LOG_DIR / RPC_PORT
 #
 # 产物：inkstack-search-<tag>-<arch>.tar.gz + .sha256
 on:
   workflow_dispatch:
-    inputs:
-      env:
-        description: 打包环境
-        type: choice
-        default: prod
-        options: [prod, dev]
-      deploy_path:
-        description: 目标部署目录（写入配置）
-        type: string
-        default: /opt/inkstack-search
-      log_root:
-        description: 日志目录
-        type: string
-        default: /data/apps/inkstack-search/logs
-      rpc_port:
-        description: RPC Hub 监听端口
-        type: string
-        default: "9010"
   push:
     branches:
       - master
@@ -36,10 +21,10 @@ permissions:
   contents: write
 
 env:
-  PKG_ENV: ${{ github.event.inputs.env || 'prod' }}
-  PKG_DEPLOY_PATH: ${{ github.event.inputs.deploy_path || vars.DEPLOY_PATH || '/opt/inkstack-search' }}
-  PKG_LOG_DIR: ${{ github.event.inputs.log_root || vars.LOG_DIR || '/data/apps/inkstack-search/logs' }}
-  PKG_RPC_PORT: ${{ github.event.inputs.rpc_port || vars.RPC_PORT || '9010' }}
+  PKG_ENV: ${{ vars.PKG_ENV || 'prod' }}
+  PKG_DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/inkstack-search' }}
+  PKG_LOG_DIR: ${{ vars.LOG_DIR || '/data/apps/inkstack-search/logs' }}
+  PKG_RPC_PORT: ${{ vars.RPC_PORT || '9010' }}
 
 jobs:
   build:
