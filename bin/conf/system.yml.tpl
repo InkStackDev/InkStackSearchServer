@@ -31,18 +31,24 @@ logs:
     appenders:
       - type: FileLogAppender
         file: ${LOG_DIR}/root.log
+        time_rotate: day
+        retention_days: 14
       - type: StdoutLogAppender
   - name: search
     level: ${LOG_LEVEL}
     appenders:
       - type: FileLogAppender
         file: ${LOG_DIR}/search.log
+        time_rotate: day
+        retention_days: 14
       - type: StdoutLogAppender
   - name: system
     level: ${LOG_LEVEL}
     appenders:
       - type: FileLogAppender
         file: ${LOG_DIR}/system.log
+        time_rotate: day
+        retention_days: 14
       - type: StdoutLogAppender
 
 search:
